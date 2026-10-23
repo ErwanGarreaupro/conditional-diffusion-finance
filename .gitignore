@@ -1,0 +1,8 @@
+.venv/
+build/
+.DS_Store
+__pycache__/
+*.pyc
+.vscode/
+
+generated_apple_scenarios.csv
