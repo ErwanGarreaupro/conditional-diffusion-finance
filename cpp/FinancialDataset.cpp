@@ -8,17 +8,12 @@
 #include <stdexcept>
 #include <utility>
 
-// Constructor
 FinancialDataset::FinancialDataset(
     const std::string& csv_path
 )
     : csv_path_(csv_path)
 {
 }
-
-// ============================================================
-// Load historical closing prices and compute log returns
-// ============================================================
 
 void FinancialDataset::load()
 {
@@ -41,15 +36,11 @@ void FinancialDataset::load()
 
     std::string line;
 
-    // Skip CSV header
     if (!std::getline(file, line))
     {
-        throw std::runtime_error(
-            "CSV file is empty"
-        );
+        throw std::runtime_error("CSV file is empty");
     }
 
-    // Read historical observations
     while (std::getline(file, line))
     {
         if (line.empty())
@@ -111,7 +102,6 @@ void FinancialDataset::load()
         );
     }
 
-    // Check that dates are strictly increasing
     for (std::size_t i = 1; i < dates_.size(); ++i)
     {
         if (dates_[i] <= dates_[i - 1])
@@ -124,20 +114,13 @@ void FinancialDataset::load()
 
     returns_.reserve(prices_.size() - 1);
 
-    // Compute daily log returns
     for (std::size_t i = 1; i < prices_.size(); ++i)
     {
-        const double r = std::log(
-            prices_[i] / prices_[i - 1]
+        returns_.push_back(
+            std::log(prices_[i] / prices_[i - 1])
         );
-
-        returns_.push_back(r);
     }
 }
-
-// ============================================================
-// Find the index of an exact trading date
-// ============================================================
 
 std::size_t FinancialDataset::findDateIndex(
     const std::string& date
@@ -161,21 +144,55 @@ std::size_t FinancialDataset::findDateIndex(
     );
 }
 
-// ============================================================
-// Prepare normalized training and validation datasets
-// ============================================================
+std::vector<float> FinancialDataset::buildContext(
+    std::size_t end_index,
+    std::size_t lookback
+) const
+{
+    if (!normalization_ready_)
+    {
+        throw std::runtime_error(
+            "Normalization statistics are not available"
+        );
+    }
+
+    if (lookback == 0 ||
+        end_index < lookback ||
+        end_index > returns_.size())
+    {
+        throw std::runtime_error(
+            "Invalid historical context window"
+        );
+    }
+
+    std::vector<float> values;
+    values.reserve(lookback);
+
+    for (std::size_t i = end_index - lookback;
+         i < end_index;
+         ++i)
+    {
+        values.push_back(
+            static_cast<float>(
+                (returns_[i] - mean_) / std_dev_
+            )
+        );
+    }
+
+    return values;
+}
 
 PreparedData FinancialDataset::prepareTrainingData(
     const std::string& prediction_date,
-    std::int64_t context_size,
+    std::int64_t lookback,
     std::int64_t horizon,
     double validation_fraction
 )
 {
-    if (context_size <= 0 || horizon <= 0)
+    if (lookback <= 0 || horizon <= 0)
     {
         throw std::invalid_argument(
-            "Context size and horizon must be positive"
+            "Lookback and horizon must be positive"
         );
     }
 
@@ -187,17 +204,14 @@ PreparedData FinancialDataset::prepareTrainingData(
         );
     }
 
-    // Price index at the prediction date
     const std::size_t prediction_index =
         findDateIndex(prediction_date);
 
-    // returns_[i] corresponds to dates_[i + 1]
-    // Therefore, prediction_index returns are available
     const std::size_t n_available_returns =
         prediction_index;
 
     const std::size_t L =
-        static_cast<std::size_t>(context_size);
+        static_cast<std::size_t>(lookback);
 
     const std::size_t H =
         static_cast<std::size_t>(horizon);
@@ -209,7 +223,6 @@ PreparedData FinancialDataset::prepareTrainingData(
         );
     }
 
-    // Chronological split
     const std::size_t train_end =
         static_cast<std::size_t>(
             (1.0 - validation_fraction) *
@@ -224,7 +237,6 @@ PreparedData FinancialDataset::prepareTrainingData(
         );
     }
 
-    // Compute mean using training returns only
     const double sum = std::accumulate(
         returns_.begin(),
         returns_.begin() + train_end,
@@ -233,14 +245,12 @@ PreparedData FinancialDataset::prepareTrainingData(
 
     mean_ = sum / static_cast<double>(train_end);
 
-    // Compute training variance
     double variance = 0.0;
 
     for (std::size_t i = 0; i < train_end; ++i)
     {
-        const double diff = returns_[i] - mean_;
-
-        variance += diff * diff;
+        const double difference = returns_[i] - mean_;
+        variance += difference * difference;
     }
 
     variance /= static_cast<double>(train_end);
@@ -254,18 +264,7 @@ PreparedData FinancialDataset::prepareTrainingData(
         );
     }
 
-    // Normalize returns with training statistics
-    std::vector<double> normalized_returns(
-        n_available_returns
-    );
-
-    for (std::size_t i = 0;
-         i < n_available_returns;
-         ++i)
-    {
-        normalized_returns[i] =
-            (returns_[i] - mean_) / std_dev_;
-    }
+    normalization_ready_ = true;
 
     std::vector<float> context_train_values;
     std::vector<float> y0_train_values;
@@ -276,7 +275,6 @@ PreparedData FinancialDataset::prepareTrainingData(
     std::int64_t n_train = 0;
     std::int64_t n_val = 0;
 
-    // Build sliding windows
     for (std::size_t start = 0;
          start + L + H <= n_available_returns;
          ++start)
@@ -284,16 +282,13 @@ PreparedData FinancialDataset::prepareTrainingData(
         const std::size_t target_start = start + L;
         const std::size_t target_end = target_start + H;
 
-        // Training target must be entirely before split
         const bool is_train =
             target_end <= train_end;
 
-        // Validation target must be entirely after split
         const bool is_validation =
             target_start >= train_end &&
             target_end <= n_available_returns;
 
-        // Skip windows crossing the boundary
         if (!is_train && !is_validation)
         {
             continue;
@@ -307,22 +302,22 @@ PreparedData FinancialDataset::prepareTrainingData(
             ? y0_train_values
             : y0_val_values;
 
-        // Historical context
-        for (std::size_t j = 0; j < L; ++j)
-        {
-            context_values.push_back(
-                static_cast<float>(
-                    normalized_returns[start + j]
-                )
-            );
-        }
+        const auto context = buildContext(
+            target_start,
+            L
+        );
 
-        // Future target
+        context_values.insert(
+            context_values.end(),
+            context.begin(),
+            context.end()
+        );
+
         for (std::size_t j = 0; j < H; ++j)
         {
             target_values.push_back(
                 static_cast<float>(
-                    normalized_returns[target_start + j]
+                    (returns_[target_start + j] - mean_) / std_dev_
                 )
             );
         }
@@ -344,7 +339,6 @@ PreparedData FinancialDataset::prepareTrainingData(
         );
     }
 
-    // Create independent tensors from flattened vectors
     auto makeTensor = [](
         const std::vector<float>& values,
         std::int64_t rows,
@@ -363,7 +357,7 @@ PreparedData FinancialDataset::prepareTrainingData(
     result.context_train = makeTensor(
         context_train_values,
         n_train,
-        context_size
+        lookback
     );
 
     result.y0_train = makeTensor(
@@ -375,7 +369,7 @@ PreparedData FinancialDataset::prepareTrainingData(
     result.context_val = makeTensor(
         context_val_values,
         n_val,
-        context_size
+        lookback
     );
 
     result.y0_val = makeTensor(
@@ -387,72 +381,35 @@ PreparedData FinancialDataset::prepareTrainingData(
     result.mean = mean_;
     result.std_dev = std_dev_;
 
-    normalization_ready_ = true;
-
     return result;
 }
 
-// ============================================================
-// Extract normalized historical context
-// ============================================================
-
 torch::Tensor FinancialDataset::getContext(
     const std::string& prediction_date,
-    std::int64_t context_size
+    std::int64_t lookback
 ) const
 {
-    if (!normalization_ready_)
-    {
-        throw std::runtime_error(
-            "Call prepareTrainingData before getContext"
-        );
-    }
-
-    if (context_size <= 0)
+    if (lookback <= 0)
     {
         throw std::invalid_argument(
-            "Context size must be positive"
+            "Lookback must be positive"
         );
     }
 
     const std::size_t index =
         findDateIndex(prediction_date);
 
-    const std::size_t L =
-        static_cast<std::size_t>(context_size);
-
-    if (index < L)
-    {
-        throw std::runtime_error(
-            "Not enough historical returns for context"
-        );
-    }
-
-    std::vector<float> values;
-    values.reserve(L);
-
-    // Last known return is returns_[index - 1]
-    for (std::size_t i = index - L;
-         i < index;
-         ++i)
-    {
-        values.push_back(
-            static_cast<float>(
-                (returns_[i] - mean_) / std_dev_
-            )
-        );
-    }
+    const auto values = buildContext(
+        index,
+        static_cast<std::size_t>(lookback)
+    );
 
     return torch::from_blob(
-        values.data(),
-        {1, context_size},
+        const_cast<float*>(values.data()),
+        {1, lookback},
         torch::TensorOptions().dtype(torch::kFloat32)
     ).clone();
 }
-
-// ============================================================
-// Get closing price at prediction date
-// ============================================================
 
 double FinancialDataset::getPrice(
     const std::string& prediction_date
@@ -460,10 +417,6 @@ double FinancialDataset::getPrice(
 {
     return prices_[findDateIndex(prediction_date)];
 }
-
-// ============================================================
-// Undo return normalization
-// ============================================================
 
 torch::Tensor FinancialDataset::denormalize(
     const torch::Tensor& normalized_returns
@@ -478,10 +431,6 @@ torch::Tensor FinancialDataset::denormalize(
 
     return normalized_returns * std_dev_ + mean_;
 }
-
-// ============================================================
-// Historical data accessors
-// ============================================================
 
 const std::vector<std::string>&
 FinancialDataset::dates() const
