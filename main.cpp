@@ -26,7 +26,7 @@ int main()
         const std::string output_path = "electricity_backtest_2025.csv";
 
         const std::int64_t lookback = 60;
-        const std::int64_t rte_lookback = 14;
+        const std::int64_t rte_lookback = 7;
         const std::int64_t horizon = 7;
         const std::int64_t rte_features_per_day = 4;
         const std::int64_t calendar_features_per_day = 4;
@@ -50,7 +50,7 @@ int main()
         training_config.batch_size = 128;
         training_config.epochs = 100;
         training_config.learning_rate = 1e-3;
-        training_config.weight_decay = 1e-4;
+        training_config.weight_decay = 1e-3;
         training_config.delta = 1e-4;
 
         SamplingConfig sampling_config;

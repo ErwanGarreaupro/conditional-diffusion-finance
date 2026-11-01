@@ -13,7 +13,7 @@
 namespace {
 
 constexpr double PI = 3.14159265358979323846;
-constexpr std::size_t RTE_LOOKBACK = 14;
+constexpr std::size_t RTE_LOOKBACK = 7;
 
 std::tm parseDate(const std::string& date) {
     if (date.size() != 10 || date[4] != '-' || date[7] != '-')
