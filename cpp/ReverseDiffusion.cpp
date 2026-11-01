@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <stdexcept>
+#include <iostream>
+#include <iomanip>
 
 ReverseDiffusion::ReverseDiffusion(
     const VPSchedule& schedule,
@@ -48,6 +50,12 @@ torch::Tensor ReverseDiffusion::sample(
     const double h =
         (1.0 - config_.delta) / config_.n_steps;
 
+    std::cout
+        << "REVERSE DIFFUSION DIAGNOSTICS"
+        << "Initial y_std: "
+        << y.std().item<double>()
+        << "\n";
+
     for (std::int64_t k = 0;
          k < config_.n_steps;
          ++k)
@@ -76,7 +84,27 @@ torch::Tensor ReverseDiffusion::sample(
         y = y
             + drift * h
             + std::sqrt(beta_s * h) * z;
+
+        if ((k + 1) % 100 == 0 || k == 0)
+        {
+            std::cout
+                << std::fixed
+                << std::setprecision(6)
+                << "Step " << k + 1
+                << "/" << config_.n_steps
+                << "s=" << s
+                << "y_std=" << y.std().item<double>()
+                << "y_min=" << y.min().item<double>()
+                << "y_max=" << y.max().item<double>()
+                << "eps_std=" << epsilon_hat.std().item<double>()
+                << "\n";
+        }
     }
+
+    std::cout
+        << "Final y_std: "
+        << y.std().item<double>()
+        << "\n";
 
     return y;
 }

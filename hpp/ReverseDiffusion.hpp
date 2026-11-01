@@ -12,7 +12,7 @@ struct SamplingConfig
     std::int64_t n_steps = 1000;
     double delta = 1e-3;
 
-    std::int64_t horizon = 20;
+    std::int64_t horizon = 60;
 };
 
 class ReverseDiffusion

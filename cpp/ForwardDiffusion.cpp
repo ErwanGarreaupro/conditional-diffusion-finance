@@ -41,7 +41,6 @@ std::vector<double> ForwardDiffusion::applyNoise(
 
     std::vector<double> y_s(y0.size());
 
-    // Y_s = alpha(s) * Y_0 + sigma(s) * epsilon
     for (std::size_t i = 0; i < y0.size(); ++i)
     {
         if (!std::isfinite(y0[i]) ||
@@ -69,13 +68,11 @@ NoisedSample ForwardDiffusion::sample(
 {
     std::vector<double> epsilon(y0.size());
 
-    // Generate independent Gaussian noise
     for (double& value : epsilon)
     {
         value = normal_(generator_);
     }
 
-    // Apply forward diffusion
     std::vector<double> y_s =
         applyNoise(y0, s, epsilon);
 
@@ -83,5 +80,5 @@ NoisedSample ForwardDiffusion::sample(
         std::move(y_s),
         std::move(epsilon),
         s
-    };
+    };  
 }
